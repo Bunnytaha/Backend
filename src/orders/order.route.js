@@ -1,12 +1,15 @@
-const express = require('express');
-const { createAOrder, getOrderByEmail } = require('./order.controller');
+const express = require("express");
+const router = express.Router();
+const { createAOrder, getOrderByEmail, createCheckoutSession } = require("./order.controller");
 
-const router =  express.Router();
-
-// create order endpoint
+// Create order endpoin
 router.post("/", createAOrder);
 
-// get orders by user email 
+// Create checkout session for Stripe
+router.post("/create-checkout-session", createCheckoutSession);  // <-- Add this route
+
+// Get orders by user email
 router.get("/email/:email", getOrderByEmail);
+
 
 module.exports = router;
