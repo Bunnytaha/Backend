@@ -38,61 +38,113 @@ const getOrderByEmail = async (req, res) => {
   }
 };
 
+// ✅ Stripe Checkout Session
 const createCheckoutSession = async (req, res) => {
   try {
-    const { items, userEmail, name, phone, address, productIds, totalPrice, paymentMethod } = req.body;
-
-    console.log("🔥 Incoming Stripe session request");
-    console.log("📦 Items:", items);
-    console.log("📧 Email:", userEmail);
+    const { items, userEmail } = req.body;
 
     if (!items || items.length === 0) {
-      console.log("❌ No items provided");
       return res.status(400).json({ message: "No items provided" });
     }
 
+    // Assuming each item has a valid product _id
     const lineItems = items.map(item => ({
       price_data: {
         currency: 'usd',
         product_data: {
           name: item.name,
         },
-        unit_amount: Math.round(Number(item.newPrice) * 100), // Multiply price by 100 to get cents
+        unit_amount: Math.round(Number(item.newPrice) * 100),
       },
       quantity: item.quantity,
     }));
 
-    console.log("✅ Stripe line items:", lineItems);
-
-    // Create a Stripe checkout session
+    // Create the Stripe session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: lineItems,
       mode: 'payment',
-      success_url: `${CLIENT_URL}/checkout?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${CLIENT_URL}/orders/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${CLIENT_URL}/checkout`,
       customer_email: userEmail,
       metadata: {
-        name,
-        phone,
-        address: JSON.stringify(address),
-        productIds: JSON.stringify(productIds),
-        totalPrice,
-        paymentMethod,
+        items: JSON.stringify(items),  // Store items in metadata
+      },
+      phone_number_collection: {
+        enabled: true,  // Enable phone number collection
       },
     });
+    
 
-    // Respond with session ID
     res.status(200).json({ id: session.id });
-  } catch (err) {
-    console.error("Error creating Stripe checkout session", err);
-    res.status(500).json({ message: "Failed to create checkout session" });
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    res.status(500).json({ message: 'Failed to create checkout session' });
   }
 };
+
+
+
+
+// Validate session for the order creation thorugh stripe and for succes page redirection
+const validateSession = async (req, res) => {
+  const { session_id } = req.query;
+
+  if (!session_id) {
+    return res.status(400).json({ success: false, message: 'Session ID is required' });
+  }
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(session_id);
+
+    console.log("Full Stripe session data:", session);
+
+    if (session.payment_status === 'paid') {
+      // Parse items from metadata (it should be a JSON string)
+      const items = session.metadata.items ? JSON.parse(session.metadata.items) : [];
+
+      if (items.length === 0) {
+        return res.status(400).json({ success: false, message: 'No items found in session' });
+      }
+
+      const productIds = items.map(item => item._id);  // Extract product IDs from the items
+
+      const orderData = {
+        name: session.customer_details.name || 'Unknown Name',
+        email: session.customer_email,
+        address: {
+          city: session.customer_details.address?.city || 'Unknown City',
+          country: session.customer_details.address?.country || 'Unknown Country',
+          state: session.customer_details.address?.state || 'Unknown State',
+          zipcode: session.customer_details.address?.postal_code || 'Unknown Zipcode',
+        },
+        phone: session.customer_details.phone || '0000000000',
+        productIds: productIds,  // Add the product IDs here
+        totalPrice: session.amount_total / 100,  // Convert from cents to dollars
+        paymentMethod: 'card',
+      };
+
+      // Create the order in the database
+      const newOrder = new Order(orderData);
+      await newOrder.save();
+
+      return res.status(200).json({ success: true });
+    } else {
+      return res.status(400).json({ success: false, message: 'Payment was not successful' });
+    }
+  } catch (error) {
+    console.error('Error validating Stripe session:', error);
+    return res.status(500).json({ success: false, message: 'Failed to validate session' });
+  }
+};
+
+
+
+
 
 module.exports = {
   createAOrder,
   getOrderByEmail,
   createCheckoutSession,
-
+  validateSession,
 };

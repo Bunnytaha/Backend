@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { createAOrder, getOrderByEmail, createCheckoutSession } = require("./order.controller");
+const { createAOrder, getOrderByEmail, createCheckoutSession , validateSession } = require("./order.controller");
 
 // Create order endpoin
 router.post("/", createAOrder);
@@ -10,6 +10,8 @@ router.post("/create-checkout-session", createCheckoutSession);  // <-- Add this
 
 // Get orders by user email
 router.get("/email/:email", getOrderByEmail);
+// Add this to your `order.routes.js`
+router.get("/validate-session", validateSession);
 
 
 module.exports = router;
